@@ -1,2 +1,2 @@
-get-ca-cert:
+get-ca-certificate:
   description: Print the CA cert.
