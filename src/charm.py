@@ -224,11 +224,11 @@ class SelfSignedCertificatesCharm(CharmBase):
             event (ActionEvent): Juju event
         """
         if not self._root_certificate_is_stored:
-            event.fail("Root Ccertificate is not yet generated")
+            event.fail("Root Certificate is not yet generated")
             return
         ca_certificate_secret = self.model.get_secret(label=CA_CERTIFICATES_SECRET_LABEL)
         ca_certificate_secret_content = ca_certificate_secret.get_content()
-        event.set_results({"result": ca_certificate_secret_content["ca-certificate"]})
+        event.set_results({"ca-certificate": ca_certificate_secret_content["ca-certificate"]})
 
     def _on_send_ca_cert_relation_joined(self, event: RelationJoinedEvent):
         self._send_ca_cert(rel_id=event.relation.id)
