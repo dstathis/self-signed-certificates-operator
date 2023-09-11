@@ -5,10 +5,14 @@
 """Self Signed X.509 Certificates."""
 
 import datetime
+import json
 import logging
 import secrets
 from typing import Optional
 
+from charms.certificate_transfer_interface.v0.certificate_transfer import (
+    CertificateTransferProvides,
+)
 from charms.tls_certificates_interface.v2.tls_certificates import (  # type: ignore[import]
     CertificateCreationRequestEvent,
     TLSCertificatesProvidesV2,
@@ -16,7 +20,7 @@ from charms.tls_certificates_interface.v2.tls_certificates import (  # type: ign
     generate_certificate,
     generate_private_key,
 )
-from ops.charm import ActionEvent, CharmBase, EventBase
+from ops.charm import ActionEvent, CharmBase, EventBase, RelationJoinedEvent
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, SecretNotFoundError, WaitingStatus
 
@@ -24,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 CA_CERTIFICATES_SECRET_LABEL = "ca-certificates"
+SEND_CA_CERT_REL_NAME = "send-ca-cert"  # Must match metadata
 
 
 class SelfSignedCertificatesCharm(CharmBase):
@@ -40,6 +45,13 @@ class SelfSignedCertificatesCharm(CharmBase):
         )
         self.framework.observe(self.on.secret_expired, self._configure_ca)
         self.framework.observe(self.on.get_ca_certificate_action, self._on_get_ca_certificate)
+        self.framework.observe(
+            self.on.get_issued_certificates_action, self._on_get_issued_certificates
+        )
+        self.framework.observe(
+            self.on[SEND_CA_CERT_REL_NAME].relation_joined,
+            self._on_send_ca_cert_relation_joined,
+        )
 
     @property
     def _config_root_ca_certificate_validity(self) -> int:
@@ -49,6 +61,23 @@ class SelfSignedCertificatesCharm(CharmBase):
             int: Certificate validity (in days)
         """
         return int(self.model.config.get("root-ca-validity"))  # type: ignore[arg-type]
+
+    def _on_get_issued_certificates(self, event: ActionEvent) -> None:
+        """Handler for the get-issued-certificates action.
+
+        Outputs the issued certificates per application.
+
+        Args:
+            event (ActionEvent): Juju event.
+
+        Returns:
+            event (ActionEvent): Juju event.
+        """
+        certificates = self.tls_certificates.get_issued_certificates()
+        if not certificates:
+            event.fail("No certificates issued yet.")
+            return
+        event.set_results({key: json.dumps(value) for key, value in certificates.items()})
 
     @property
     def _config_certificate_validity(self) -> int:
@@ -134,6 +163,7 @@ class SelfSignedCertificatesCharm(CharmBase):
         self._generate_root_certificate()
         self.tls_certificates.revoke_all_certificates()
         logger.info("Revoked all previously issued certificates.")
+        self._send_ca_cert()
         self.unit.status = ActiveStatus()
 
     def _invalid_configs(self) -> list[str]:
@@ -200,6 +230,28 @@ class SelfSignedCertificatesCharm(CharmBase):
         ca_certificate_secret_content = ca_certificate_secret.get_content()
         event.set_results({"result": ca_certificate_secret_content["ca-certificate"]})
 
+    def _on_send_ca_cert_relation_joined(self, event: RelationJoinedEvent):
+        self._send_ca_cert(rel_id=event.relation.id)
+
+    def _send_ca_cert(self, *, rel_id=None):
+        """There is one (and only one) CA cert that we need to forward to multiple apps.
+
+        Args:
+            rel_id: Relation id. If not given, update all relations.
+        """
+        send_ca_cert = CertificateTransferProvides(self, SEND_CA_CERT_REL_NAME)
+        if self._root_certificate_is_stored:
+            secret = self.model.get_secret(label=CA_CERTIFICATES_SECRET_LABEL)
+            secret_content = secret.get_content()
+            ca = secret_content["ca-certificate"]
+            if rel_id:
+                send_ca_cert.set_certificate("", ca, [], relation_id=rel_id)
+            else:
+                for relation in self.model.relations.get(SEND_CA_CERT_REL_NAME, []):
+                    send_ca_cert.set_certificate("", ca, [], relation_id=relation.id)
+        else:
+            for relation in self.model.relations.get(SEND_CA_CERT_REL_NAME, []):
+                send_ca_cert.remove_certificate(relation.id)
 
 def generate_password() -> str:
     """Generates a random string containing 64 bytes.
