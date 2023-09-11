@@ -290,3 +290,32 @@ class TestCharm(unittest.TestCase):
         }
 
         action_event.set_results.assert_called_with(expected_certificates)
+
+    def test_given_ca_cert_generated_when_get_ca_certificate_action_then_returns_ca_certificate(
+        self,
+    ):
+        self.harness.set_leader(is_leader=True)
+        ca_certificate = "whatever CA certificate"
+
+        self.harness._backend.secret_add(
+            label="ca-certificates",
+            content={
+                "ca-certificate": ca_certificate,
+                "private-key": "whatever private key",
+                "private-key-password": "whatever private_key_password",
+            },
+        )
+
+        action_event = Mock()
+        self.harness.charm._on_get_ca_certificate(action_event)
+        expected_certificate = {
+            "ca-certificate": ca_certificate,
+        }
+
+        action_event.set_results.assert_called_with(expected_certificate)
+
+    def test_given_ca_cert_not_generated_when_get_ca_certificate_action_then_action_fails(self):
+        self.harness.set_leader(is_leader=True)
+        action_event = Mock(params={})
+        self.harness.charm._on_get_ca_certificate(action_event)
+        action_event.fail.assert_called_with("Root Certificate is not yet generated")
