@@ -316,6 +316,6 @@ class TestCharm(unittest.TestCase):
 
     def test_given_ca_cert_not_generated_when_get_ca_certificate_action_then_action_fails(self):
         self.harness.set_leader(is_leader=True)
-        action_event = Mock(params={})
+        action_event = Mock()
         self.harness.charm._on_get_ca_certificate(action_event)
         action_event.fail.assert_called_with("Root Certificate is not yet generated")

@@ -253,6 +253,7 @@ class SelfSignedCertificatesCharm(CharmBase):
             for relation in self.model.relations.get(SEND_CA_CERT_REL_NAME, []):
                 send_ca_cert.remove_certificate(relation.id)
 
+
 def generate_password() -> str:
     """Generates a random string containing 64 bytes.
 
